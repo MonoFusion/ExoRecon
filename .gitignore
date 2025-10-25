@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Large raw datasets stay local only
+indiana_music_14_3/
+/Users/ha1o/Downloads/takes/takes/indiana_music_14_3/
+raw_data/
+_raw_data/
+*/frame_aligned_videos/*.mp4

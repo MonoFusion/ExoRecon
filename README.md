@@ -64,6 +64,32 @@ The script will `cd` into the take directory, call `viewer_mps --task mate --vrs
 - `indiana_music_14_3/` and other raw-data folders remain untracked by default. Keep checkpoints inside those directories if needed; they will be ignored.
 - Commit and push everything else (scripts, documentation, vendored package) from `/Users/ha1o/Downloads/takes/takes`.
 
+## 7. Run the preprocessing scripts (sequential)
+
+The folder `/Users/ha1o/Downloads/takes/takes/preprocess_scripts` contains two numbered scripts that must be executed in order right after `push_all_data.sh` finishes. They assume you already ran the Project Aria pipeline so that `processed_frames/` and `undist_processed_frames/` exist.
+
+1. **Resize + organize RGB images** (Pillow is already included through `egorecon.yml`):
+   ```bash
+   python preprocess_scripts/1_formal_resize_img.py \
+     --raw-data-root ./raw_data \
+     --target-root ./data/images \
+     --width 512 --height 288
+   ```
+   - Iterates over every take inside `./raw_data` (or the path you pass) and writes resized JPEGs under `./data/images/<take>/<camera>/`.
+   - Override the defaults if your raw data lives somewhere else.
+
+2. **Generate DyTrial JSON metadata** (requires `torch`, `pytorch3d`, `pandas`, etc.—install via `python -m pip install -r requirements.txt` if they are missing):
+   ```bash
+   python preprocess_scripts/2_formal_DyTrialJson.py \
+     --seq indiana_music_14_3 \
+     --raw-data-root ./raw_data
+   ```
+   - `--seq` should match the folder name created by step 1 (e.g., `indiana_piano_14_4`).
+   - The script expects per-frame images under `undist_processed_frames/undist_cam01` and calibration CSVs under `<take>/trajectory/` (produced earlier by `push_all_data.sh`).
+   - A `Dy_train_meta.json` file is emitted in the take’s `trajectory/` folder, ready for downstream training code.
+
+Re-run both scripts whenever you update the underlying raw data; they are idempotent and overwrite outputs in place.
+
 ## Troubleshooting
 
 - If `viewer_mps` reports `ModuleNotFoundError: _core_pybinds`, double-check that you are using the conda environment created from `egorecon.yml` (Python 3.9) and that `pip install -e projectaria_tools_pkg` succeeded inside that environment.

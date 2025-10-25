@@ -1,0 +1,13 @@
+numpy
+rerun-sdk>=0.12.0
+tqdm
+
+[all]
+requests
+jupyter
+matplotlib
+pandas
+pillow
+plotly
+scipy
+moviepy

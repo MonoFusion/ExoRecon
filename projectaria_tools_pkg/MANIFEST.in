@@ -1,0 +1,5 @@
+recursive-include src/projectaria_tools *.py *.pyi *.md *.json *.txt *.dylib *.so *.cfg *.ini *.yaml
+prune src/projectaria_tools/__pycache__
+prune src/projectaria_tools/*/__pycache__
+include src/_core_pybinds.cpython-39-darwin.so
+include LICENSE

@@ -3,6 +3,7 @@
 All commands start inside `MonoFusion/preproc/ExoRecon`. Raw takes live in `../../raw_data`, processed assets in `../../data`.
 
 ## 1. Grab a take
+Register for EgoExo access at https://docs.ego-exo4d-data.org/, accept the license, then use the portal at https://visualize.ego4d-data.org/login to find the `<take_uuid>` you want.
 ```bash
 egoexo -o ../../ \
   --uids <take_uuid> \

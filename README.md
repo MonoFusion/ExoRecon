@@ -71,12 +71,13 @@ The folder `/Users/ha1o/Downloads/takes/takes/preprocess_scripts` contains two n
 1. **Resize + organize RGB images** (Pillow is already included through `egorecon.yml`):
    ```bash
    python preprocess_scripts/1_formal_resize_img.py \
+     --sequence indiana_music_14_3 \
      --raw-data-root ./raw_data \
      --target-root ./data/images \
      --width 512 --height 288
    ```
-   - Iterates over every take inside `./raw_data` (or the path you pass) and writes resized JPEGs under `./data/images/<take>/<camera>/`.
-   - Override the defaults if your raw data lives somewhere else.
+   - Scans `undist_processed_frames/undist_cam0*` inside the specified take and writes resized JPEGs under `./data/images/<scene-token>_undist_camXX/` (the scene token is the 2nd chunk of the take name, e.g., `indiana_music_14_3 → music`).
+   - Override `--camera-glob` or `--source-subdir` if your folder layout differs from the EgoExo defaults.
 
 2. **Generate DyTrial JSON metadata** (requires `torch`, `pytorch3d`, `pandas`, etc.—install via `python -m pip install -r requirements.txt` if they are missing):
    ```bash

@@ -5,7 +5,36 @@ import pandas as pd
 import argparse
 import os
 import glob
-from pytorch3d.transforms import quaternion_to_matrix
+
+
+def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
+    """Convert wxyz quaternions to rotation matrices using only PyTorch."""
+    if quaternions.shape[-1] != 4:
+        raise ValueError('Quaternions should have shape (..., 4).')
+
+    quaternions = quaternions / torch.linalg.norm(
+        quaternions, dim=-1, keepdim=True
+    ).clamp_min(torch.finfo(quaternions.dtype).eps)
+
+    w, x, y, z = torch.unbind(quaternions, dim=-1)
+    ww, xx, yy, zz = w * w, x * x, y * y, z * z
+    wx, wy, wz = w * x, w * y, w * z
+    xy, xz, yz = x * y, x * z, y * z
+
+    m00 = 1 - 2 * (yy + zz)
+    m01 = 2 * (xy - wz)
+    m02 = 2 * (xz + wy)
+    m10 = 2 * (xy + wz)
+    m11 = 1 - 2 * (xx + zz)
+    m12 = 2 * (yz - wx)
+    m20 = 2 * (xz - wy)
+    m21 = 2 * (yz + wx)
+    m22 = 1 - 2 * (xx + yy)
+
+    rotation = torch.stack(
+        [m00, m01, m02, m10, m11, m12, m20, m21, m22], dim=-1
+    ).reshape(quaternions.shape[:-1] + (3, 3))
+    return rotation
 
 # Add argument parser to accept seq from terminal
 parser = argparse.ArgumentParser(description='Generate DyTrial metadata for a specific sequence.')
@@ -42,32 +71,6 @@ def intrinsic_matrix(fx, fy, cx, cy, dtype=torch.float32, device='cpu'):
     return torch.tensor([[fx,  0, cx], 
                          [ 0, fy, cy],
                          [ 0,  0,  1]], dtype=dtype, device=device)
-
-def quaternion_to_rotation_matrix(q):
-    # Extract the components of the quaternion
-    qx, qy, qz, qw = q
-    
-    # Compute the rotation matrix components
-    r00 = 1 - 2*(qy**2 + qz**2)
-    r01 = 2*(qx*qy - qz*qw)
-    r02 = 2*(qx*qz + qy*qw)
-    
-    r10 = 2*(qx*qy + qz*qw)
-    r11 = 1 - 2*(qx**2 + qz**2)
-    r12 = 2*(qy*qz - qx*qw)
-    
-    r20 = 2*(qx*qz - qy*qw)
-    r21 = 2*(qy*qz + qx*qw)
-    r22 = 1 - 2*(qx**2 + qy**2)
-    
-    # Construct the rotation matrix
-    R = torch.tensor([
-        [r00, r01, r02],
-        [r10, r11, r12],
-        [r20, r21, r22]
-    ])
-    
-    return R
 
 def construct_extrinsic_matrix(Q, T):
     # Ensure Q is a 3x3 matrix and T is a 3x1 vector

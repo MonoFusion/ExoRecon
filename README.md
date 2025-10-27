@@ -2,48 +2,43 @@
 
 This repository captures the minimum set of instructions and scripts we need to process EgoExo takes locally. It packages the vendored Project Aria Tools build that `push_all_data.sh` uses plus the conda environment definition that keeps every machine consistent.
 
+All commands assume you start inside `MonoFusion/preproc/ExoRecon`, where raw takes live in `../../raw_data` and derived assets in `../../data`.
+
 ## 1. Prepare and download data
 
 1. Register for access at https://docs.ego-exo4d-data.org/ and obtain a license key.
 2. Follow the official download guide to fetch the EgoExo dataset (≈18 TB). For smaller experiments visit https://visualize.ego4d-data.org/login, pick a scene, note its `take_id`, and download the matching subset, for example:
    ```bash
-   egoexo -o ./raw_data/ \
+   egoexo -o ../../ \
      --uids ae3e392f-5db9-471e-b910-796a9d65e3ac \
-     --parts take_vrs takes -y
+     --parts take_trajectory take_vrs takes -y
    ```
-   After the download finishes you should have folders such as `./raw_data/indiana_piano_14_4/` containing `ariaXX.vrs`, `frame_aligned_videos/*.mp4`, and the `trajectory/` artifacts.
-3. Copy the take you want to process into this repository (e.g., `indiana_music_14_3/`). Keep the heavy data out of git—the `.gitignore` already excludes these paths.
+   Adjust `--uids` as needed; the `--parts` list pulls a synchronized copy of the trajectories, VRS, and take archive in a single call.
+3. Flatten the CLI output into `../../raw_data` and capture the first valid timestep for each sequence:
+   ```bash
+   mv ../../raw_data/takes/* ../../raw_data/
+   rm -rf ../../raw_data/takes
+   echo 1487 > ../../raw_data/indiana_music_14_3/timestep.txt
+   ```
+   Replace `1487` and `indiana_music_14_3` with the right frame index and folder name for your take. Keep all heavy data inside `../../raw_data`—the `.gitignore` already excludes these paths.
 
-## 2. Create the Python environment
+## 2. Environment and dataset prerequisites (merged from §§2–4)
 
-All binaries we ship were compiled against Python 3.9. Create the conda env exactly once per machine:
+All binaries we ship were compiled against Python 3.9. Create the conda env and install the vendored Project Aria Tools exactly once per machine:
 
 ```bash
 conda env create -f egorecon.yml
 conda activate egorecon
-```
-
-You can update the environment later with `conda env update -f egorecon.yml --prune`.
-
-## 3. Install the vendored Project Aria Tools
-
-Install the package in editable mode so CLI entry points stay in sync with our sources:
-
-```bash
 python -m pip install --upgrade pip
 python -m pip install -e projectaria_tools_pkg
 ```
 
-The `viewer_mps` CLI now exposes a `mate` task that performs the custom EgoExo workflow (frame extraction + matrix generation) expected by `push_all_data.sh`.
-
-## 4. Required dataset contents
-
-Before running the processing script, ensure the selected take contains:
+The editable install keeps the `viewer_mps` CLI in sync with this checkout. Before running any processing script, make sure each take under `../../raw_data/<take_id>/` contains:
 
 - `aria01.vrs` (or the appropriate VRS file).
-- `frame_aligned_videos/` with `cam01.mp4`–`cam04.mp4` plus `timestep.txt`.
+- `frame_aligned_videos/` with `cam01.mp4`–`cam04.mp4` plus your freshly written `timestep.txt`.
 - `trajectory/closed_loop_trajectory.csv` for RGB pose export.
-- `gopro_calibs.csv` either in the take root or under `trajectory/` for the static camera rectification step.
+- `gopro_calibs.csv` either in the take root or under `trajectory/` so the static camera rectification step can run.
 
 ## 5. Process a take
 
@@ -53,45 +48,56 @@ Set `LOCAL_BASE_PATH` inside `push_all_data.sh` if the data lives elsewhere, the
 ./push_all_data.sh
 ```
 
-The script will `cd` into the take directory, call `viewer_mps --task mate --vrs aria01.vrs --cam cam01 --resize 512`, and generate:
+`push_all_data.sh` now drives the entire pipeline: it drops into the take folder, runs `viewer_mps`, and immediately follows up with the two preprocessing scripts so you do not have to call them manually. Add (or keep) a block similar to the snippet below toward the end of the script:
+
+```bash
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+DATA_ROOT="$SCRIPT_DIR/../../data"
+RAW_ROOT="$SCRIPT_DIR/raw_data"
+
+viewer_mps --vrs aria01.vrs --task mate --resize 512 --cam cam01
+
+python "$SCRIPT_DIR/preprocess_scripts/1_formal_resize_img.py" \
+  --raw-data-root "$RAW_ROOT" \
+  --target-root "$DATA_ROOT/images" \
+  --width 512 --height 288
+
+python "$SCRIPT_DIR/preprocess_scripts/2_formal_DyTrialJson.py" \
+  --seq "$FOLDER_NAME" \
+  --raw-data-root "$RAW_ROOT"
+```
+
+With that block in place the script produces:
 
 - Extracted JPEG frames under `processed_frames/cam0X`.
 - Optional undistorted frames under `undist_processed_frames/` (if `gopro_calibs.csv` is present).
 - Pose matrices in `train.matrices.txt` (RGB) or `cam0X_train.matrices.txt`.
+- Resized RGB dumps under `../../data/images/<take>/<camera>/`.
+- `Dy_train_meta.json` inside `<take>/trajectory/`.
 
-## 6. Git hygiene
+## 7. Optional: Run the preprocessing scripts manually
 
-- `indiana_music_14_3/` and other raw-data folders remain untracked by default. Keep checkpoints inside those directories if needed; they will be ignored.
-- Commit and push everything else (scripts, documentation, vendored package) from `/Users/ha1o/Downloads/takes/takes`.
-
-## 7. Run the preprocessing scripts (sequential)
-
-The folder `/Users/ha1o/Downloads/takes/takes/preprocess_scripts` contains two numbered scripts that must be executed in order right after `push_all_data.sh` finishes. They assume you already ran the Project Aria pipeline so that `processed_frames/` and `undist_processed_frames/` exist.
+`push_all_data.sh` already chains these helpers, so you only need the commands below when debugging or when you want to re-run a single stage without extracting frames again. The `preprocess_scripts/` directory contains two numbered scripts that must be executed in order.
 
 1. **Resize + organize RGB images** (Pillow is already included through `egorecon.yml`):
    ```bash
    python preprocess_scripts/1_formal_resize_img.py \
      --sequence indiana_music_14_3 \
-     --raw-data-root ./raw_data \
-     --target-root ./data/images \
+     --raw-data-root ../../raw_data \
+     --target-root ../../data/images \
      --width 512 --height 288
    ```
-   - Scans `undist_processed_frames/undist_cam0*` inside the specified take and writes resized JPEGs under `./data/images/<scene-token>_undist_camXX/` (the scene token is the 2nd chunk of the take name, e.g., `indiana_music_14_3 → music`).
+   - Scans `undist_processed_frames/undist_cam0*` inside the specified take and writes resized JPEGs under `../../data/images/<scene-token>_undist_camXX/` (the scene token is the 2nd chunk of the take name, e.g., `indiana_music_14_3 → music`).
    - Override `--camera-glob` or `--source-subdir` if your folder layout differs from the EgoExo defaults.
 
 2. **Generate DyTrial JSON metadata** (requires `torch`, `pytorch3d`, `pandas`, etc.—install via `python -m pip install -r requirements.txt` if they are missing):
    ```bash
    python preprocess_scripts/2_formal_DyTrialJson.py \
      --seq indiana_music_14_3 \
-     --raw-data-root ./raw_data
+     --raw-data-root ../../raw_data
    ```
    - `--seq` should match the folder name created by step 1 (e.g., `indiana_piano_14_4`).
    - The script expects per-frame images under `undist_processed_frames/undist_cam01` and calibration CSVs under `<take>/trajectory/` (produced earlier by `push_all_data.sh`).
    - A `Dy_train_meta.json` file is emitted in the take’s `trajectory/` folder, ready for downstream training code.
 
 Re-run both scripts whenever you update the underlying raw data; they are idempotent and overwrite outputs in place.
-
-## Troubleshooting
-
-- If `viewer_mps` reports `ModuleNotFoundError: _core_pybinds`, double-check that you are using the conda environment created from `egorecon.yml` (Python 3.9) and that `pip install -e projectaria_tools_pkg` succeeded inside that environment.
-- When `gopro_calibs.csv` is missing, the script will still extract frames but skip rectification—copy the calibration file next to the take if you need undistorted images or GoPro matrices.
